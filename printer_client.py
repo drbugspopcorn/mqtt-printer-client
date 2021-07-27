@@ -29,14 +29,22 @@
 '''
 
 import paho.mqtt.client as mqtt
+
+from decouple import config
+
 import json
 import time
-import printer_handler
+
+if config('TEST_ENVIRONMENT', default='') == 'WINDOWS':
+    import mock_printer_handler as printer_handler
+else:
+    import printer_handler
+
 import document_handler
 
-PRINTING_PRINT_TOPIC = "popcorn/printing"
-# PRINTING_PRINT_TOPIC = "popcorn/printingdev"
-PRINTING_COMMAND_TOPIC = "popcorn/printermanagement"
+PRINTING_PRINT_TOPIC = f"despatch/printers/{config('CLIENT_NAME')}"
+
+PRINTING_COMMAND_TOPIC = "despatch/printers/"
 
 # The callback for when the client receives a CONNACK response from the server.
 def on_connect(client, userdata, flags, rc):
@@ -45,6 +53,7 @@ def on_connect(client, userdata, flags, rc):
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
     client.subscribe(PRINTING_PRINT_TOPIC)
+    client.subscribe(PRINTING_COMMAND_TOPIC)
 
 # The callback for when a PUBLISH message is received from the server.
 def on_message(client, handlers, msg):
@@ -53,48 +62,47 @@ def on_message(client, handlers, msg):
             try:
                 raw = False
                 data = json.loads(msg.payload)
-                if data['document'] and data['document'] == 'invoice':
-                    printer = 'XEROX'
-                    file = handlers['docs'].get_document('invoice', data['delivery_number'], order_number= data['order_number'])
-                
-                elif data['document'] and data['document'] == 'courier-label' and data['carrier'] and data['carrier'] == 'AMX':
-                    printer = 'TSC_TDP-245_Plus'
-                    file = handlers['docs'].get_document('courier-label', data['delivery_number'], bundle_number=data['bundle_number'], order_number= data['order_number'])
-                
-                elif data['document'] and data['document'] == 'courier-label':
-                    printer = 'TSC244'
-                    file = handlers['docs'].get_document('courier-label', data['delivery_number'], bundle_number=data['bundle_number'], order_number= data['order_number'])
-                elif data['document'] and data['document'] == 'split-label':
-                    printer = 'MINI_ZEBRA'
-                    raw = True
-                    file = handlers['docs'].get_document('split-label', data['delivery_number'], bundle_number=data['bundle_number'], order_number= data['order_number'])
-                else:
-                    return
-                handlers['print'].print(printer, file, raw)
-                handlers['docs'].cleanup_document(file)
 
+                if 'url' in data and 'printer' in data:
+                    raw = False
+                    if 'raw' in data:
+                        raw = data['raw']
+
+                    file = handlers['docs'].get_document(data['url'])
+                    handlers['print'].print(data['printer'], file, raw)
+                    handlers['docs'].cleanup_document(file)
+
+                
 
             except Exception as e:
                 print(f"Error: Badly formed data or document not found {e}")
 
         elif msg.topic == PRINTING_COMMAND_TOPIC:
-            pass
+            try:
+                data = json.loads(msg.payload)
+                if 'command' in data and data['command'] == 'enumerate':
+                    printers_response = {'client': config('CLIENT_NAME'), 'printers': ['TSC']}
+
+                    client.publish(PRINTING_COMMAND_TOPIC, payload=json.dumps(printers_response))
+
+            except Exception as e:
+                print(f"Error: Bad command, or something malformed: {e}")
 
         print(msg.topic+" "+str(msg.payload))
 
 
     except Exception as e:
-        #@TODO throw this at an error mqtt channel
+        #@TODO start logging errors on a logging collector
         print(f"ERROR: Unhandled exception!:{e}")
 
 
 printer_handler = printer_handler.PrinterHandler()
-document_handler = document_handler.DocumentHandler()
+document_handler = document_handler.DocumentHandler(config('DOCUMENT_LOCATION', default=""))
 client = mqtt.Client(userdata={'print':printer_handler, 'docs': document_handler})
 client.on_connect = on_connect
 client.on_message = on_message
 
-client.connect("broker.emqx.io", 1883, 60)
+client.connect("docker-host.local", 1883, 60)
 
 # Blocking call that processes network traffic, dispatches callbacks and
 # handles reconnecting.

@@ -2,12 +2,14 @@ from urllib.request import urlretrieve
 import urllib.parse
 
 class DocumentHandler():
-    def __init__(self):
+    def __init__(self, document_location):
         '''
             since we'll need to authenticate in some shape or form, this will happen here
         '''
         self.document_link = 'http://ship.local/api/documents'
         self.staging_document_link = 'http://shipstaging.local/api/documents'
+
+        self.document_location = document_location
         print("Doing all the setup-y document stuff")
 
 
@@ -17,7 +19,7 @@ class DocumentHandler():
         '''
 
 
-        filename = f"/home/pi/tmp_print/{doc_type}{delivery_number}_{bundle_number}.pdf"
+        filename = f"{self.document_location}{doc_type}{delivery_number}_{bundle_number}.pdf"
         params = urllib.parse.urlencode({'document_type':doc_type, 'delivery_number': delivery_number, 'bundle_number': bundle_number})
         document_link = self.document_link
         if 'STAGING' in order_number:
