@@ -1,0 +1,14 @@
+
+
+
+
+Install CUPS:
+sudo apt-get install cups
+sudo usermod -a -G lpadmin pi
+
+Python-Cups:
+git clone https://github.com/OpenPrinting/pycups.git
+sudo apt-get install libcups2-dev python3-dev
+The makefile needs to be edited: PYTHON=python3 on the first line instead of PYTHON=python
+
+Then just set up the printer using cups web interface (<<hostname>>.local:631)
