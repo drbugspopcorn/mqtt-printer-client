@@ -42,9 +42,10 @@ else:
 
 import document_handler
 
-PRINTING_PRINT_TOPIC = f"despatch/printers/{config('CLIENT_NAME')}"
 
-PRINTING_COMMAND_TOPIC = "despatch/printers/"
+# .env file defines BASE_CHANNEL.  Includes the trailing slash
+PRINTING_PRINT_TOPIC = f"{config('BASE_CHANNEL')}{config('CLIENT_NAME')}"
+PRINTING_COMMAND_TOPIC = f"{config('BASE_CHANNEL')}"
 
 # The callback for when the client receives a CONNACK response from the server.
 def on_connect(client, userdata, flags, rc):
@@ -72,8 +73,6 @@ def on_message(client, handlers, msg):
                     handlers['print'].print(data['printer'], file, raw)
                     handlers['docs'].cleanup_document(file)
 
-                
-
             except Exception as e:
                 print(f"Error: Badly formed data or document not found {e}")
 
@@ -81,7 +80,10 @@ def on_message(client, handlers, msg):
             try:
                 data = json.loads(msg.payload)
                 if 'command' in data and data['command'] == 'enumerate':
-                    printers_response = {'client': config('CLIENT_NAME'), 'printers': ['TSC']}
+                    printers = handlers['print'].enumerate_printers()
+                    printers_response = []
+                    for p in printers:
+                        printers_response.append(f"{config('BASE_CHANNEL')}{config('CLIENT_NAME')}/{p}")
 
                     client.publish(PRINTING_COMMAND_TOPIC, payload=json.dumps(printers_response))
 
@@ -102,7 +104,7 @@ client = mqtt.Client(userdata={'print':printer_handler, 'docs': document_handler
 client.on_connect = on_connect
 client.on_message = on_message
 
-client.connect("docker-host.local", 1883, 60)
+client.connect(config('MQTT_BROKER_ADDRESS'), config('MQTT_BROKER_PORT'), 60)
 
 # Blocking call that processes network traffic, dispatches callbacks and
 # handles reconnecting.

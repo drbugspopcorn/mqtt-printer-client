@@ -12,7 +12,8 @@ class PrinterHandler():
         pid = self.conn.printFile(printer, filename, "AUTO", opts)
 
     def enumerate_printers(self):
-        pass
+        printers = self.conn.getPrinters()
+        return printers.keys()
 
 if __name__ == '__main__':
     p = PrinterHandler()
