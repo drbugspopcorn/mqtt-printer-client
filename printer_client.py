@@ -104,7 +104,7 @@ client = mqtt.Client(userdata={'print':printer_handler, 'docs': document_handler
 client.on_connect = on_connect
 client.on_message = on_message
 
-client.connect(config('MQTT_BROKER_ADDRESS'), config('MQTT_BROKER_PORT'), 60)
+client.connect(config('MQTT_BROKER_ADDRESS'), config('MQTT_BROKER_PORT', cast=int), 60)
 
 # Blocking call that processes network traffic, dispatches callbacks and
 # handles reconnecting.

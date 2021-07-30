@@ -17,4 +17,4 @@ class PrinterHandler():
 
 if __name__ == '__main__':
     p = PrinterHandler()
-    p.print('A4_CP475', 'docs_tmp/invoice22.pdf')
+    print(p.enumerate_printers())
