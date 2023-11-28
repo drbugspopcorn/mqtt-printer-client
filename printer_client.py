@@ -31,9 +31,11 @@
 import paho.mqtt.client as mqtt
 
 from decouple import config
-
+import logging
 import json
 import time
+
+logger = logging.getLogger(__name__)
 
 if config('TEST_ENVIRONMENT', default='') == 'WINDOWS':
     import mock_printer_handler as printer_handler
@@ -58,6 +60,7 @@ def on_connect(client, userdata, flags, rc):
 
 # The callback for when a PUBLISH message is received from the server.
 def on_message(client, handlers, msg):
+    logger.info(f"Message received {msg.topic} {msg.payload}")
     try:            # we can't fall over, need to handle all our errors.  Perhaps chuck the error on an error channel
         if msg.topic == PRINTING_PRINT_TOPIC:
             try:

@@ -1,5 +1,44 @@
 from win32 import win32print
 import win32
+import ghostscript
+
+
+def print_zpl(zpl, printer_name):
+    """
+    Prints the given zpl string to the given printer.
+    """
+    hPrinter = win32print.OpenPrinter(printer_name)
+    try:
+        hJob = win32print.StartDocPrinter(hPrinter, 1, ("test of raw data", None, "RAW"))
+        try:
+            win32print.StartPagePrinter(hPrinter)
+            win32print.WritePrinter(hPrinter, zpl)
+            win32print.EndPagePrinter(hPrinter)
+        finally:
+            win32print.EndDocPrinter(hPrinter)
+    finally:
+        win32print.ClosePrinter(hPrinter)
+
+
+def print_pdf(pdf_path, printer_name):
+    """
+    Prints the given pdf file to the given printer.
+    """
+
+
+    hPrinter = win32print.OpenPrinter(printer_name)
+    pdf_file = open(pdf_path, 'rb')
+
+    try:
+        hJob = win32print.StartDocPrinter(hPrinter, 1, ("test of raw data", None, "RAW"))
+        try:
+            win32print.StartPagePrinter(hPrinter)
+            win32print.WritePrinter(hPrinter, pdf_file.read())
+            win32print.EndPagePrinter(hPrinter)
+        finally:
+            win32print.EndDocPrinter(hPrinter)
+    finally:
+        win32print.ClosePrinter(hPrinter)
 
 # Get a list of all printers with their names and descriptions
 printers = win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL)
@@ -9,6 +48,7 @@ for printer in printers:
     print(printer)
 
 printer_name = 'TSC TDP-245 Plus (Copy 1)'
+pdf_file = "C:\\Users\\ReubenPosthuma\\Downloads\\188.pdf"
 # printer_name = 'ZDesigner TLP 2844'
 
 # Get a handle to the printer
@@ -63,13 +103,7 @@ raw_data = bytes("""^XA
 ^FO470,955^FDCA^FS
 
 ^XZ""", encoding="utf-8")
+# print_zpl(raw_data, printer_name)
+print_pdf(pdf_file, printer_name)
 
-# Send the raw data to the printer
-win32print.StartDocPrinter(hPrinter, 1, ("test", None, "RAW"))
-win32print.StartPagePrinter(hPrinter)
-win32print.WritePrinter(hPrinter, raw_data)
-win32print.EndPagePrinter(hPrinter)
-win32print.EndDocPrinter(hPrinter)
-win32print.ClosePrinter(hPrinter)
-    
-# print (win32.GetLastError())
+printer = win32print.GetDefaultPrinter()
