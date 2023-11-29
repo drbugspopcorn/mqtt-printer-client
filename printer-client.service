@@ -1,5 +1,6 @@
 [Unit]
-Description=Shipping Printer Client.  Waits for MQTT, then prints t$After=multi-user.target
+Description=Shipping Printer Client.  Waits for MQTT, then prints from mqtt
+After=multi-user.target
 Requires=network-online.target
 After=network-online.target
 Requires=cups.service
@@ -10,9 +11,10 @@ After=cups.service
 Type=simple
 Restart=always
 User=pi
-WorkingDirectory=/home/pi/DEV
+WorkingDirectory=/home/pi/mqtt-printer-client
 ExecStartPre=/bin/bash -c 'until host google.com; do sleep 1; done'
-ExecStart=/usr/bin/python3 -u /home/pi/DEV/printer_client/printer_c$#StandardInput=tty-force
+ExecStart=/usr/bin/python3 -u /home/pi/mqtt-printer-client/printer_client.py
+#StandardInput=tty-force
 
 [Install]
 WantedBy=multi-user.target
