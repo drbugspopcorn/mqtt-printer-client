@@ -45,8 +45,8 @@ printers = win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL)
 
 
 for printer in printers:
-    print(printer)
-
+    print("Printer: ", printer[2])
+    
 printer_name = 'ZDesigner GK420t'
 pdf_file = "C:\\Users\\ReubenPosthuma\\Downloads\\188.pdf"
 # printer_name = 'ZDesigner TLP 2844'

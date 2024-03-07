@@ -37,10 +37,12 @@ import time
 
 logger = logging.getLogger(__name__)
 
-if config('TEST_ENVIRONMENT', default='') == 'WINDOWS':
-    import mock_printer_handler as printer_handler
+
+import platform
+if platform.system() == 'Windows':
+    import printer_handler_windows as printer_handler
 else:
-    import printer_handler
+    import printer_handler_cups as printer_handler
 
 import document_handler
 
@@ -50,7 +52,7 @@ PRINTING_PRINT_TOPIC = f"{config('BASE_CHANNEL')}{config('CLIENT_NAME')}"
 PRINTING_COMMAND_TOPIC = f"{config('BASE_CHANNEL')}"
 
 # The callback for when the client receives a CONNACK response from the server.
-def on_connect(client, userdata, flags, rc):
+def on_connect(client, userdata, flags, rc, properties):
     print("Connected with result code "+str(rc))
 
     # Subscribing in on_connect() means that if we lose the connection and
@@ -103,7 +105,7 @@ def on_message(client, handlers, msg):
 
 printer_handler = printer_handler.PrinterHandler()
 document_handler = document_handler.DocumentHandler(config('DOCUMENT_LOCATION', default=""))
-client = mqtt.Client(userdata={'print':printer_handler, 'docs': document_handler})
+client = mqtt.Client(userdata={'print':printer_handler, 'docs': document_handler}, callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
 client.on_connect = on_connect
 client.on_message = on_message
 
