@@ -1,0 +1,26 @@
+sudo apt-get install python3-pip cups libcups2-dev bind9-host
+sudo cupsctl --remote-admin --remote-any 
+
+sudo usermod -a -G lpadmin pi
+
+add .env
+'''
+DOCUMENT_LOCATION=docs_tmp/
+CLIENT_NAME=XXXXXXXX
+BASE_CHANNEL=despatch/printers/
+
+MQTT_BROKER_ADDRESS=docker-host-esxi.local
+MQTT_BROKER_PORT=1883
+'''
+
+
+
+git clone https://github.com/drbugspopcorn/mqtt-printer-client.git
+cd mqtt-printer-client
+
+pip install -r requirements.common..txt  --break-system-packages
+
+sudo cp printer-client.service /lib/systemd/system/printer-client.service
+sudo systemctl daemon-reload
+sudo systemctl enable printer-client.service
+sudo systemctl start printer-client.service
