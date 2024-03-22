@@ -13,7 +13,11 @@ class PrinterHandler():
 
     def enumerate_printers(self):
         printers = self.conn.getPrinters()
-        return printers.keys()
+        local_printer_list = []
+        for k in printers.keys():
+            if not printers[k]['printer_type'] & 0b10:      # docs - https://www.cups.org/doc/spec-ipp.html printer type enum
+                local_printer_list.append(k)
+        return local_printer_list
 
 if __name__ == '__main__':
     p = PrinterHandler()
