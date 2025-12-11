@@ -11,6 +11,7 @@ RUN dpkg --add-architecture i386 && \
     for i in 1 2 3; do \
         apt-get install -y libc6:i386 \
             cups \
+            libcups2-dev \
             python3 \
             python3-pip \
             python3-venv \
@@ -54,4 +55,4 @@ EXPOSE 631
 COPY app /app
 WORKDIR /app
 
-ENTRYPOINT [ "cupsd && python printer_client.py" ]
+ENTRYPOINT ["/bin/bash", "-c", "cupsd && python printer_client.py"]
