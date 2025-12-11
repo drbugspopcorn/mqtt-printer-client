@@ -9,6 +9,13 @@ class PrinterHandler():
         opts = {}
         if raw:
             opts = {"RAW":"TRUE"}
+        else:
+            opts = {
+                "fit-to-page": "true",
+                "print-color-mode": "color",
+                "media": "A6",  # Explicitly set size, don't auto-detect
+                "PageSize": "A6",
+            }
         pid = self.conn.printFile(printer, filename, "AUTO", opts)
 
     def enumerate_printers(self):
