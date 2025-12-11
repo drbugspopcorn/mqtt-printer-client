@@ -54,5 +54,6 @@ EXPOSE 631
 
 COPY app /app
 WORKDIR /app
+RUN mkdir docs_tmp/
 
 ENTRYPOINT ["/bin/bash", "-c", "cupsd && python printer_client.py"]
