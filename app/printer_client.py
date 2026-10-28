@@ -41,11 +41,16 @@ from commands import CommandHandler
 
 logger = logging.getLogger('printer_client')
 
-PRINTER_HANDLER = config('PRINTER_HANDLER', default='windows' if platform.system() == 'Windows' else 'cups')
+# DEMO_MODE (dev only) shows prints in a web page instead - see demo_printer_handler.py
+DEMO_MODE = config('DEMO_MODE', default=False, cast=bool)
+PRINTER_HANDLER = config('PRINTER_HANDLER',
+                         default='demo' if DEMO_MODE else 'windows' if platform.system() == 'Windows' else 'cups')
 if PRINTER_HANDLER == 'windows':
     import printer_handler_windows as printer_handler
 elif PRINTER_HANDLER == 'mock':
     import mock_printer_handler as printer_handler
+elif PRINTER_HANDLER == 'demo':
+    import demo_printer_handler as printer_handler
 else:
     import printer_handler_cups as printer_handler
 

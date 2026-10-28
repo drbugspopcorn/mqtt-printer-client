@@ -62,5 +62,12 @@ gets per-client credentials and ACLs.
 
 ## Local development
 
-`PRINTER_HANDLER=mock` swaps CUPS for a fake handler, so you can run the client and the fleet page on a laptop
-against any broker.
+**Demo mode** for testing the OMS without paper: set `DEMO_MODE=true` in `app/.env` and run
+`python app/printer_client.py`. It registers a printer called `Demo` (`DEMO_PRINTERS=Demo,Demo_Labels` for more).
+Anything printed to it shows up at http://localhost:8631, which opens automatically and keeps the last 15 jobs.
+PDFs display inline, and ZPL is rendered to label images in the browser with
+[zpl-renderer-js](https://github.com/Fabrizz/zpl-renderer-js) (WASM loaded from jsDelivr, so the label data never
+leaves your machine). Pick the label size and dpi in the page header. Demo mode doesn't need CUPS or pycups.
+It's off unless the flag is set, and it isn't meant for real boxes.
+
+`PRINTER_HANDLER=mock` swaps CUPS for a fake handler that just logs, if you only need the fleet page.
