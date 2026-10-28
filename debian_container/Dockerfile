@@ -54,6 +54,8 @@ EXPOSE 631
 
 COPY app /app
 WORKDIR /app
+# this one prints to network printers, unlike the USB-only boxes
+ENV PRINTER_CONNECTIONS=usb,network
 RUN mkdir docs_tmp/
 
 ENTRYPOINT ["/bin/bash", "-c", "cupsd && python printer_client.py"]

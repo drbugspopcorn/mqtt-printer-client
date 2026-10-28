@@ -5,7 +5,7 @@ class PrinterHandler():
         print("Doing all the setup-y printer stuff")
 
 
-    def print(self, printer, filename, raw=False):
+    def print(self, printer, filename, raw=False, options=None):
         print(f"Printing filename {filename} out on {printer}!")
         opts = {}
         if raw:

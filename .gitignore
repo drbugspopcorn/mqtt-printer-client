@@ -53,3 +53,6 @@ Thumbs.db
 *.sqlite3
 
 docs_tmp/
+.venv/
+app/.update_state.json
+app/.last_rollback.json
