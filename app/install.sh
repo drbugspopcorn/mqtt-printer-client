@@ -35,9 +35,34 @@ done
 RUN_HOME=$(getent passwd "$RUN_USER" | cut -d: -f6)
 as_user() { sudo -u "$RUN_USER" -H "$@"; }
 
-echo "==> Installing packages"
-apt-get update -q
-apt-get install -y -q git cups cups-client libcups2-dev python3 python3-venv python3-dev gcc
+apt_help() {
+    echo
+    echo "Couldn't install: $MISSING"
+    if grep -qs 'buster' /etc/os-release; then
+        cat <<'EOF'
+This is Raspbian buster, which is end-of-life - its package servers have moved. Point apt at the archive, then re-run:
+
+    sudo sed -i 's|raspbian.raspberrypi.org|legacy.raspbian.org|' /etc/apt/sources.list
+    sudo sed -i '/buster-backports/s/^/#/' /etc/apt/sources.list /etc/apt/sources.list.d/*.list
+    sudo apt-get update --allow-releaseinfo-change
+
+(Longer term, reflash with a current Raspberry Pi OS.)
+EOF
+    fi
+    exit 1
+}
+
+echo "==> Packages"
+PACKAGES="git cups cups-client libcups2-dev python3 python3-venv python3-dev gcc"
+# only touch apt if something's missing - old boxes often can't reach their package servers any more
+MISSING=$(for p in $PACKAGES; do dpkg -s "$p" >/dev/null 2>&1 || printf '%s ' "$p"; done)
+if [[ -n "$MISSING" ]]; then
+    apt-get update -q || echo "apt-get update had errors, trying the install anyway"
+    # shellcheck disable=SC2086
+    apt-get install -y -q $MISSING || apt_help
+else
+    echo "    all present"
+fi
 
 # work out where the repo is: the checkout we're running from, --dir, or clone a fresh one
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
@@ -51,10 +76,12 @@ if [[ ! -d "$INSTALL_DIR/.git" ]]; then
 fi
 APP_DIR="$INSTALL_DIR/app"
 chown -R "$RUN_USER": "$INSTALL_DIR"
-as_user git -C "$INSTALL_DIR" config core.fileMode false
+as_user git -C "$INSTALL_DIR" config --replace-all core.fileMode false
 
 echo "==> Python environment"
 as_user python3 -m venv "$INSTALL_DIR/.venv"
+# the pip bundled with older Pythons (buster has 3.7) struggles with current packages
+as_user "$INSTALL_DIR/.venv/bin/pip" install -q --disable-pip-version-check --upgrade pip
 as_user "$INSTALL_DIR/.venv/bin/pip" install -q --disable-pip-version-check -r "$APP_DIR/requirements.common.txt"
 
 if [[ ! -f "$APP_DIR/.env" ]]; then

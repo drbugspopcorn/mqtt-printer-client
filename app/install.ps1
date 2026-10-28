@@ -131,7 +131,7 @@ if (-not (Test-Path (Join-Path $Dir '.git'))) {
     }
     $cloneTarget = Join-Path $Temp 'checkout'
     if (Test-Path $cloneTarget) { Remove-Item -Recurse -Force $cloneTarget }
-    Invoke-Native $GitNow @('clone', '-q', '-c', 'core.autocrlf=false', '-c', 'core.filemode=false', '-b', $Branch, $RepoUrl, $cloneTarget)
+    Invoke-Native $GitNow @('clone', '-q', '-c', 'core.autocrlf=false', '-b', $Branch, $RepoUrl, $cloneTarget)
     New-Item -ItemType Directory -Force -Path $Dir | Out-Null
     Get-ChildItem $cloneTarget -Force | Move-Item -Destination $Dir -Force
 }
@@ -145,8 +145,9 @@ $ErrorActionPreference = 'Continue'
 $trusted = & $Git config --system --get-all safe.directory 2>$null
 $ErrorActionPreference = 'Stop'
 if ($trusted -notcontains $safeDir) { Invoke-Native $Git @('config', '--system', '--add', 'safe.directory', $safeDir) }
-Invoke-Native $Git @('-C', $Dir, 'config', 'core.fileMode', 'false')
-Invoke-Native $Git @('-C', $Dir, 'config', 'core.autocrlf', 'false')
+# --replace-all: git on Windows already writes filemode on clone, and a plain set refuses duplicates
+Invoke-Native $Git @('-C', $Dir, 'config', '--replace-all', 'core.fileMode', 'false')
+Invoke-Native $Git @('-C', $Dir, 'config', '--replace-all', 'core.autocrlf', 'false')
 
 # --- Python environment ---
 

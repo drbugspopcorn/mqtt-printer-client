@@ -63,7 +63,7 @@ def update(branch='master', force=False):
         raise RuntimeError('A previous update is still waiting for its health check')
 
     # the repo has historically been copied around with mode changes - don't treat those as local edits
-    git('config', 'core.fileMode', 'false')
+    git('config', '--replace-all', 'core.fileMode', 'false')
     status = check(branch)
     prev, new = status['current'], status['remote']
     if prev == new:
