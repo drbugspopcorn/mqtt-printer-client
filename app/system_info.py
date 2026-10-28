@@ -1,7 +1,9 @@
 '''
     Host health for the fleet page.  Stdlib only (no psutil) so it installs cleanly on old Pis.
     Everything here degrades to None rather than raising - a missing sensor shouldn't kill the heartbeat.
+    Linux reads /proc and /sys; Windows goes through ctypes and the registry.
 '''
+import ctypes
 import glob
 import os
 import platform
@@ -10,6 +12,8 @@ import socket
 import subprocess
 import sys
 import time
+
+WINDOWS = sys.platform == 'win32'
 
 
 def _read(path):
@@ -20,7 +24,24 @@ def _read(path):
         return None
 
 
+def _windows_registry(path, name):
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path) as key:
+            return str(winreg.QueryValueEx(key, name)[0]).strip()
+    except OSError:
+        return None
+
+
 def _os_name():
+    if WINDOWS:
+        product = _windows_registry(r'SOFTWARE\Microsoft\Windows NT\CurrentVersion', 'ProductName')
+        build = _windows_registry(r'SOFTWARE\Microsoft\Windows NT\CurrentVersion', 'CurrentBuild')
+        # ProductName still says "Windows 10" on Windows 11 - the build number is the tell
+        if product and build and build.isdigit() and int(build) >= 22000:
+            product = product.replace('Windows 10', 'Windows 11')
+        display = _windows_registry(r'SOFTWARE\Microsoft\Windows NT\CurrentVersion', 'DisplayVersion')
+        return ' '.join(p for p in (product, display) if p) or f"Windows {platform.release()}"
     for line in (_read('/etc/os-release') or '').splitlines():
         if line.startswith('PRETTY_NAME='):
             return line.split('=', 1)[1].strip('"')
@@ -28,6 +49,10 @@ def _os_name():
 
 
 def _model():
+    if WINDOWS:
+        maker = _windows_registry(r'HARDWARE\DESCRIPTION\System\BIOS', 'SystemManufacturer')
+        model = _windows_registry(r'HARDWARE\DESCRIPTION\System\BIOS', 'SystemProductName')
+        return ' '.join(p for p in (maker, model) if p) or None
     model = _read('/proc/device-tree/model') or _read('/sys/class/dmi/id/product_name')
     return model.replace('\x00', '') if model else None
 
@@ -57,6 +82,9 @@ def host_info(broker_host=None):
 
 
 def uptime_seconds():
+    if WINDOWS:
+        ctypes.windll.kernel32.GetTickCount64.restype = ctypes.c_uint64
+        return ctypes.windll.kernel32.GetTickCount64() / 1000.0
     raw = _read('/proc/uptime')
     return float(raw.split()[0]) if raw else None
 
@@ -71,7 +99,31 @@ def cpu_temp():
     return round(max(temps), 1) if temps else None
 
 
+class _MemoryStatusEx(ctypes.Structure):
+    _fields_ = [('dwLength', ctypes.c_ulong), ('dwMemoryLoad', ctypes.c_ulong),
+                ('ullTotalPhys', ctypes.c_ulonglong), ('ullAvailPhys', ctypes.c_ulonglong),
+                ('ullTotalPageFile', ctypes.c_ulonglong), ('ullAvailPageFile', ctypes.c_ulonglong),
+                ('ullTotalVirtual', ctypes.c_ulonglong), ('ullAvailVirtual', ctypes.c_ulonglong),
+                ('ullAvailExtendedVirtual', ctypes.c_ulonglong)]
+
+
+def _windows_memory():
+    status = _MemoryStatusEx()
+    status.dwLength = ctypes.sizeof(_MemoryStatusEx)
+    if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+        return None
+    total, available = status.ullTotalPhys, status.ullAvailPhys
+    return {
+        'total': total,
+        'available': available,
+        'percent': round(100.0 * (total - available) / total, 1) if total else None,
+        'swap_used': max(0, (status.ullTotalPageFile - status.ullAvailPageFile) - (total - available)),
+    }
+
+
 def memory():
+    if WINDOWS:
+        return _windows_memory()
     info = {}
     for line in (_read('/proc/meminfo') or '').splitlines():
         key, _, rest = line.partition(':')
@@ -88,7 +140,10 @@ def memory():
     }
 
 
-def disk(path='/'):
+ROOT = (os.environ.get('SystemDrive', 'C:') + '\\') if WINDOWS else '/'
+
+
+def disk(path=ROOT):
     try:
         usage = shutil.disk_usage(path)
     except OSError:
@@ -129,7 +184,7 @@ def pi_throttled():
 def metrics(document_location=None):
     uptime = uptime_seconds()
     load = os.getloadavg() if hasattr(os, 'getloadavg') else None
-    disks = [disk('/')]
+    disks = [disk(ROOT)]
     if document_location:
         doc_disk = disk(os.path.abspath(document_location))
         if doc_disk and disks[0] and doc_disk['total'] != disks[0]['total']:

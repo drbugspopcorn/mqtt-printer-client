@@ -34,6 +34,35 @@ The installer sets up CUPS, a Python venv in `.venv/`, `app/.env`, a sudoers rul
 - Config: `app/.env` (see `app/example.env`)
 - CUPS web UI: `http://<host>.local:631` (the installer enables remote admin, pass `--no-remote-cups` to skip)
 
+### Windows
+
+In an **Administrator** PowerShell on a 64-bit Windows 10/11 PC:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/drbugspopcorn/mqtt-printer-client/master/app/install.ps1))) -Broker docker-host-esxi.local -Name packing-3
+```
+
+It installs into `C:\mqtt-printer-client`, using pinned downloads that it keeps under `tools\` without touching
+PATH:
+- Python 3.12, machine-wide, only if a usable one isn't already installed
+- portable Git, for updates
+- SumatraPDF, for silent PDF printing
+- WinSW, which runs the client as the `printer-client` service as LocalSystem, starting at boot
+
+Re-running it is safe and keeps `app\.env`. Service logs are in `logs\`.
+
+How printing works on Windows:
+- **ZPL and other raw data** goes straight to the printer through the spooler. Use the ZDesigner driver for Zebras,
+  or "Generic / Text Only".
+- **PDFs** print silently through SumatraPDF and the printer's own driver, scaled to fit. Set the paper size per
+  printer on the fleet page; otherwise the size set on the printer in Windows is used.
+- Whether a job is a PDF is decided from the file content, not the `raw` flag.
+- **Printers must be installed on the PC itself**, either USB or a network printer added by IP. The service can't
+  see printers mapped from another PC (`\\otherpc\printer`).
+- **Fleet page support** matches Linux: status, queue, cancel/clear, resume (it also unticks "Use printer
+  offline"), test print, add/remove printers (via PowerShell, with drivers already installed on the PC), logs,
+  restart, reboot and update.
+
 ## Updates and rollback
 
 **Update** on the fleet page runs `git fetch` then `git reset --hard origin/master`, reinstalls requirements if they

@@ -73,12 +73,14 @@ CMD_TOPIC = CLIENT_TOPIC + 'cmd'
 RESULT_TOPIC = CLIENT_TOPIC + 'result'
 EVENTS_TOPIC = CLIENT_TOPIC + 'events'
 BROADCAST_CMD_TOPIC = f"{FLEET_CHANNEL}_all/cmd"
+# non-zero so service wrappers that only restart on failure (WinSW) bring us back after restart/update
+RESTART_EXIT_CODE = 3
 
 
 class PrinterClient():
     def __init__(self):
         self.started_at = time.time()
-        self.printers = (printer_handler.PrinterHandler(PRINTER_CONNECTIONS) if PRINTER_HANDLER == 'cups'
+        self.printers = (printer_handler.PrinterHandler(PRINTER_CONNECTIONS) if PRINTER_HANDLER in ('cups', 'windows')
                          else printer_handler.PrinterHandler())
         self.docs = document_handler.DocumentHandler(config('DOCUMENT_LOCATION', default=''))
         self.commands = CommandHandler(self)
@@ -227,6 +229,7 @@ class PrinterClient():
             'version': self.version,
             'update': {'pending': updater.pending_update(), 'last_rollback': updater.last_rollback()},
             'cups': {'ok': cups_error is None, 'error': cups_error},
+            'warnings': self.printers.warnings() if hasattr(self.printers, 'warnings') else [],
             'printers': printers,
             'jobs': dict(self.job_stats, queued=self.print_queue.qsize(), recent=list(self.recent_jobs)[:10]),
             'errors': log_buffer.buffer.recent_errors(10),
@@ -245,17 +248,17 @@ class PrinterClient():
             self.status_wanted.wait(STATUS_INTERVAL)
             self.status_wanted.clear()
 
-    def schedule_exit(self, reason, delay=1.0, after=None):
-        ''' give the command result a moment to go out, say goodbye, then exit and let systemd restart us '''
+    def schedule_exit(self, reason, delay=1.0, after=None, exit_code=RESTART_EXIT_CODE):
+        ''' give the command result a moment to go out, say goodbye, then exit and let systemd/WinSW restart us '''
         def go():
             time.sleep(delay)
-            self.shutdown(reason, before_disconnect=after)
+            self.shutdown(reason, before_disconnect=after, exit_code=exit_code)
         threading.Thread(target=go, daemon=True).start()
 
-    def shutdown(self, reason, before_disconnect=None):
+    def shutdown(self, reason, before_disconnect=None, exit_code=0):
         ''' must not run on the network loop thread - it waits for the offline message to be acked '''
         logger.warning(f"Shutting down: {reason}")
-        self.exit_code = 0
+        self.exit_code = exit_code
         info = self.publish(ONLINE_TOPIC, self._online_payload(False, reason), retain=True, qos=1)
         try:
             info.wait_for_publish(timeout=3)
@@ -270,7 +273,10 @@ class PrinterClient():
         self.docs.purge_stale()
         threading.Thread(target=self.print_worker, name='print', daemon=True).start()
         threading.Thread(target=self.status_loop, name='status', daemon=True).start()
-        signal.signal(signal.SIGTERM, lambda *_: self.schedule_exit('stopped', delay=0))
+        # systemd sends SIGTERM; WinSW stops the Windows service with Ctrl+C/Break
+        for sig in ('SIGTERM', 'SIGINT', 'SIGBREAK'):
+            if hasattr(signal, sig):
+                signal.signal(getattr(signal, sig), lambda *_: self.schedule_exit('stopped', delay=0, exit_code=0))
 
         logger.info(f"Starting {CLIENT_NAME} ({self.version.get('short', 'unknown version')}), "
                     f"broker {MQTT_BROKER_ADDRESS}:{MQTT_BROKER_PORT}")

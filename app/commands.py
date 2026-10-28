@@ -7,6 +7,7 @@
     No auth yet (LAN only) - see README before exposing the broker anywhere else.
 '''
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -103,6 +104,11 @@ class CommandHandler():
         return {'restarting': True}
 
     def reboot(self, args):
+        if os.name == 'nt':
+            # the service runs as LocalSystem, which may shut down
+            self.app.schedule_exit('reboot', after=lambda: subprocess.run(
+                ['shutdown', '/r', '/t', '5', '/c', 'Rebooted from the OMS fleet page']))
+            return {'rebooting': True}
         if not shutil.which('sudo'):
             raise RuntimeError('sudo not available')
         # validate the sudoers rule now so the page gets a useful error rather than silence

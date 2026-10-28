@@ -91,4 +91,12 @@ if __name__ == '__main__':
     except Exception as e:
         log(f"update check failed, starting anyway: {e}")
     os.chdir(APP_DIR)
-    os.execv(sys.executable, [sys.executable, '-u', os.path.join(APP_DIR, 'printer_client.py')])
+    client = [sys.executable, '-u', os.path.join(APP_DIR, 'printer_client.py')]
+    if os.name == 'nt':
+        # execv on Windows spawns a new process and exits straight away, which the service wrapper reads as
+        # the service stopping.  Stay as the parent and pass the exit code through instead.  The client handles
+        # the wrapper's Ctrl+C itself, so ignore it here rather than dying first.
+        import signal
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        sys.exit(subprocess.call(client))
+    os.execv(sys.executable, client)

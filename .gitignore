@@ -56,3 +56,6 @@ docs_tmp/
 .venv/
 app/.update_state.json
 app/.last_rollback.json
+app/printer_settings.json
+tools/
+logs/
