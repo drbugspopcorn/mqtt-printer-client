@@ -1,4 +1,6 @@
 python-decouple
 paho-mqtt>=2.0
+# paho-mqtt 2.x needs this on Python 3.7 (Raspbian buster) but doesn't declare it
+typing_extensions; python_version < "3.8"
 pycups; sys_platform != "win32"
 pywin32; sys_platform == "win32"

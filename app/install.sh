@@ -84,6 +84,11 @@ as_user python3 -m venv "$INSTALL_DIR/.venv"
 as_user "$INSTALL_DIR/.venv/bin/pip" install -q --disable-pip-version-check --upgrade pip
 as_user "$INSTALL_DIR/.venv/bin/pip" install -q --disable-pip-version-check -r "$APP_DIR/requirements.common.txt"
 
+if [[ ! -f "$APP_DIR/.env" && -f "$INSTALL_DIR/.env" ]]; then
+    # older installs kept .env at the top of the checkout - keep its name and broker so OMS printer choices still work
+    echo "==> Moving $INSTALL_DIR/.env to $APP_DIR/.env"
+    as_user cp "$INSTALL_DIR/.env" "$APP_DIR/.env"
+fi
 if [[ ! -f "$APP_DIR/.env" ]]; then
     echo "==> Creating $APP_DIR/.env"
     as_user cp "$APP_DIR/example.env" "$APP_DIR/.env"
