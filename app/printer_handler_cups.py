@@ -1,3 +1,4 @@
+import os
 from urllib.parse import unquote, urlsplit
 
 import cups
@@ -189,6 +190,37 @@ class PrinterHandler():
     def remove_printer(self, printer):
         conn = self._conn()
         self._require_printer(conn, printer)
+        conn.deletePrinter(printer)
+
+    def rename_printer(self, printer, new_name):
+        '''
+            CUPS can't rename a queue, so re-create it under the new name with the same device, driver (PPD, which
+            also carries its default options) and settings, then delete the old one.
+        '''
+        conn = self._conn()
+        printers = self._local_printers(conn)
+        if printer not in printers:
+            raise ValueError(f"No local printer called {printer!r}")
+        if new_name in conn.getPrinters():
+            raise ValueError(f"There's already a printer called {new_name!r}")
+        if any(j['printer'] == printer for j in self._jobs(conn, 'not-completed')):
+            raise ValueError(f"{printer} has queued jobs - let them finish or clear the queue first")
+        p = printers[printer]
+        try:
+            ppd = conn.getPPD(printer)
+        except cups.IPPError:
+            ppd = None      # raw queue, no driver
+        try:
+            conn.addPrinter(new_name, filename=ppd, device=p['device-uri'], info=p.get('printer-info') or new_name,
+                            location=p.get('printer-location') or '')
+        finally:
+            if ppd:
+                os.remove(ppd)
+        conn.setPrinterShared(new_name, bool(p.get('printer-is-shared', False)))
+        conn.enablePrinter(new_name)
+        conn.acceptJobs(new_name)
+        if conn.getDefault() == printer:
+            conn.setDefault(new_name)
         conn.deletePrinter(printer)
 
     def set_default(self, printer):

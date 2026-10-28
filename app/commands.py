@@ -38,6 +38,7 @@ class CommandHandler():
             'printers.drivers': lambda args: self.printers.list_drivers(args.get('search', '')),
             'printers.add': self.add_printer,
             'printers.remove': self._changes_printers(lambda args: self.printers.remove_printer(args['printer'])),
+            'printers.rename': self.rename_printer,
             'printers.enable': self._changes_printers(lambda args: self.printers.enable_printer(args['printer'])),
             'printers.disable': self._changes_printers(
                 lambda args: self.printers.disable_printer(args['printer'], args.get('reason', ''))),
@@ -98,6 +99,14 @@ class CommandHandler():
         # browsers holding printer lists from 'enumerate' need to hear about the new one
         self.app.announce_printers()
         return {'name': args['name']}
+
+    def rename_printer(self, args):
+        if not PRINTER_NAME_RE.match(args['new_name']):
+            raise ValueError("Printer name may only contain letters, numbers, '.', '_' and '-'")
+        self.printers.rename_printer(args['printer'], args['new_name'])
+        self.app.request_status()
+        self.app.announce_printers()
+        return {'name': args['new_name']}
 
     def restart(self, args):
         self.app.schedule_exit('restart')

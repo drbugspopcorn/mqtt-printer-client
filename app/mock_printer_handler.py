@@ -10,8 +10,15 @@ logger = logging.getLogger(__name__)
 class PrinterHandler():
     def __init__(self):
         self.printers = {
-            'Mock_Label': {'make_model': 'Mock ZPL label printer', 'device_uri': 'usb://Mock/Label', 'state': 'idle'},
-            'Mock_A4': {'make_model': 'Mock laser', 'device_uri': 'ipp://mock-a4.local/ipp/print', 'state': 'idle'},
+            'GK420d_303': {'make_model': 'Zebra ZPL Label Printer', 'state': 'idle',
+                           'device_uri': 'usb://Zebra%20Technologies/ZTC%20GK420d?serial=28J194603303'},
+            'Zebra_Technologies_ZTC_GK420d': {'make_model': 'Local Raw Printer', 'state': 'stopped',
+                                              'state_message': 'Paused - media out', 'queued_jobs': 2,
+                                              'device_uri': 'usb://Zebra%20Technologies/ZTC%20GK420d?serial=28J194600871'},
+            'Brother_HL_L3240CDW': {'make_model': 'Brother HL-L3240CDW series, driverless', 'state': 'idle', 'default': True,
+                                    'device_uri': 'ipp://localhost:60000/ipp/print', 'connection': 'usb'},
+            'Office_Ricoh': {'make_model': 'Ricoh IM C3000 PDF', 'state': 'idle', 'connection': 'network', 'offered': False,
+                             'device_uri': 'socket://192.168.1.40:9100'},
         }
         self.job_ids = itertools.count(1)
 
@@ -23,8 +30,12 @@ class PrinterHandler():
         return list(self.printers)
 
     def printer_details(self):
-        return [dict(name=name, state_message='', state_reasons=[], accepting=True, shared=False, info=name,
-                     location='', default=False, queued_jobs=0, **p) for name, p in self.printers.items()]
+        return [{
+            'name': name, 'state': p.get('state', 'idle'), 'state_message': p.get('state_message', ''),
+            'state_reasons': [], 'accepting': True, 'shared': False, 'device_uri': p.get('device_uri'),
+            'connection': p.get('connection', 'usb'), 'offered': p.get('offered', True), 'make_model': p.get('make_model'),
+            'info': name, 'location': '', 'default': p.get('default', False), 'queued_jobs': p.get('queued_jobs', 0),
+        } for name, p in self.printers.items()]
 
     def list_jobs(self, which='not-completed', printer=None, limit=50):
         return []
@@ -36,7 +47,7 @@ class PrinterHandler():
         pass
 
     def enable_printer(self, printer):
-        self.printers[printer]['state'] = 'idle'
+        self.printers[printer].update(state='idle', state_message='')
 
     def disable_printer(self, printer, reason=''):
         self.printers[printer]['state'] = 'stopped'
@@ -45,7 +56,10 @@ class PrinterHandler():
         return next(self.job_ids)
 
     def list_devices(self, timeout=10):
-        return [{'uri': 'usb://Zebra/ZD420', 'class': 'direct', 'info': 'Zebra ZD420', 'make_model': 'Zebra ZD420', 'id': ''},
+        return [{'uri': 'usb://Zebra%20Technologies/ZTC%20GK420t?serial=29A181402145', 'class': 'direct', 'info': 'Zebra Technologies ZTC GK420t',
+                 'make_model': 'Zebra Technologies ZTC GK420t', 'id': 'MFG:Zebra Technologies;MDL:ZTC GK420t;SN:29A181402145;'},
+                {'uri': 'usb://Zebra%20Technologies/ZTC%20ZD420-203dpi%20ZPL?serial=D4J203900116', 'class': 'direct',
+                 'info': 'Zebra Technologies ZTC ZD420-203dpi ZPL', 'make_model': 'Zebra Technologies ZTC ZD420-203dpi ZPL', 'id': ''},
                 {'uri': 'dnssd://Brother%20HL-L3240CDW._ipp._tcp.local/', 'class': 'network', 'info': 'Brother HL-L3240CDW',
                  'make_model': 'Brother HL-L3240CDW', 'id': ''}]
 
@@ -59,6 +73,11 @@ class PrinterHandler():
 
     def remove_printer(self, printer):
         self.printers.pop(printer)
+
+    def rename_printer(self, printer, new_name):
+        if new_name in self.printers:
+            raise ValueError(f"There's already a printer called {new_name!r}")
+        self.printers[new_name] = self.printers.pop(printer)
 
     def set_default(self, printer):
         pass

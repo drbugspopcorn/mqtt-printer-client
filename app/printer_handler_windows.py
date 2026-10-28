@@ -507,6 +507,17 @@ class PrinterHandler():
             if settings.pop(printer, None) is not None:
                 self._save_settings(settings)
 
+    def rename_printer(self, printer, new_name):
+        self._require_printer(printer)
+        if new_name in self._printers():
+            raise ValueError(f"There's already a printer called {new_name!r}")
+        powershell(f"Rename-Printer -Name {ps_quote(printer)} -NewName {ps_quote(new_name)}")
+        with self.settings_lock:
+            settings = self._load_settings()
+            if printer in settings:
+                settings[new_name] = settings.pop(printer)
+                self._save_settings(settings)
+
     def set_default(self, printer):
         ''' only affects the account the client runs as (LocalSystem under the service) '''
         self._require_printer(printer)
