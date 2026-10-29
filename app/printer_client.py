@@ -236,7 +236,15 @@ class PrinterClient():
         }
 
     def status_loop(self):
+        last_purge = time.time()
         while self.exit_code is None:
+            if time.time() - last_purge > 600:
+                # anything a crash or a locked file left behind - no print takes anywhere near this long
+                last_purge = time.time()
+                try:
+                    self.docs.purge_stale()
+                except Exception:
+                    logger.exception("Failed to purge old documents")
             if self.connected_at:
                 try:
                     self.publish(STATUS_TOPIC, self.build_status(), retain=True)

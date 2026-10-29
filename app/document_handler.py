@@ -4,6 +4,7 @@ import os
 import shutil
 import socket
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -54,15 +55,25 @@ class DocumentHandler():
         logger.info(f"Downloaded {document_url} to {filename}")
         return filename
 
-    def cleanup_document(self, filename):
+    def cleanup_document(self, filename, attempt=0):
+        '''
+            Deletes a printed document straight away.  The printer has its own copy by now (CUPS/the spooler), so
+            this never holds up the next job.  On Windows the file can still be locked for a moment (SumatraPDF
+            closing, antivirus scanning it) - then it's retried in the background rather than left behind.
+        '''
         try:
             os.remove(filename)
         except FileNotFoundError:
             pass
         except OSError as e:
-            logger.warning(f"Couldn't delete {filename}: {e}")
+            if attempt < 5:
+                retry = threading.Timer(2 ** attempt, self.cleanup_document, (filename, attempt + 1))
+                retry.daemon = True
+                retry.start()
+            else:
+                logger.warning(f"Couldn't delete {filename}: {e} - purge_stale will get it")
 
-    def purge_stale(self, max_age_seconds=3600):
+    def purge_stale(self, max_age_seconds=900):
         ''' leftovers from crashes (and the years before cleanup actually deleted anything) '''
         cutoff = time.time() - max_age_seconds
         removed = 0
