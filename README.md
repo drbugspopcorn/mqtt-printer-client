@@ -55,7 +55,10 @@ How printing works on Windows:
 - **ZPL and other raw data** goes straight to the printer through the spooler. Use the ZDesigner driver for Zebras,
   or "Generic / Text Only".
 - **PDFs** print silently through SumatraPDF and the printer's own driver, scaled to fit. Set the paper size per
-  printer on the fleet page; otherwise the size set on the printer in Windows is used.
+  printer on the fleet page (**⋯ → Label size…** for labels such as 100 × 174 mm). Otherwise the printer's default
+  paper is used. The service runs as LocalSystem, so a size you pick in *Printing Preferences* while logged in
+  doesn't reach it. The fleet page writes a label size into the printer's machine-wide *Printing Defaults* and
+  the service's own preferences, and shows the size PDFs actually print at.
 - Whether a job is a PDF is decided from the file content, not the `raw` flag.
 - **Printers must be installed on the PC itself**, either USB or a network printer added by IP. The service can't
   see printers mapped from another PC (`\\otherpc\printer`).

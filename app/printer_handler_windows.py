@@ -70,6 +70,13 @@ SUMATRA_PAPER = {'a2': 'A2', 'a3': 'A3', 'a4': 'A4', 'a5': 'A5', 'a6': 'A6', 'le
 LABEL_DRIVER = re.compile(r'zdesigner|zebra|zpl|generic / text', re.I)
 RAW_DRIVER = 'Generic / Text Only'
 
+# DEVMODE bits (wingdi.h) for setting a printer's default paper
+DM_ORIENTATION, DM_PAPERSIZE, DM_PAPERLENGTH, DM_PAPERWIDTH = 0x1, 0x2, 0x4, 0x8
+DMPAPER_USER = 256
+DMORIENT_PORTRAIT = 1
+DM_OUT_BUFFER, DM_IN_BUFFER = 2, 8
+DC_PAPERS, DC_PAPERSIZE = 2, 3
+
 
 def connection_type(port, attributes=0, port_info=None):
     '''
@@ -120,6 +127,31 @@ def job_state(status):
     return 'pending', flags
 
 
+def named_paper(media):
+    ''' SumatraPDF's name for a standard paper ('a6', 'iso_a6_105x148mm' -> 'A6'), or None '''
+    key = (media or '').strip().lower().replace('iso_', '').replace('na_', '').split('_')[0]
+    return SUMATRA_PAPER.get(key)
+
+
+def custom_size_mm(media):
+    '''
+        A label size that isn't one of SumatraPDF's named papers, as (width, height) in mm, e.g.
+        '100x174mm', 'Custom.100x174mm' (CUPS), '4x6in', 'na_index-4x6_4x6in' (IPP).  None for 'A6' etc.
+    '''
+    media = (media or '').strip().lower()
+    if not media or named_paper(media):
+        return None
+    sizes = re.findall(r'(\d+(?:\.\d+)?)\s*[x\u00d7]\s*(\d+(?:\.\d+)?)\s*(mm|in)?', media)
+    if not sizes:
+        return None
+    width, height, unit = sizes[-1]
+    scale = 25.4 if unit == 'in' else 1
+    width, height = round(float(width) * scale, 1), round(float(height) * scale, 1)
+    if not (10 <= width <= 1000 and 10 <= height <= 2000):
+        return None
+    return width, height
+
+
 def sumatra_settings(options):
     '''
         Turns CUPS-style options (what the OMS and fleet page send) into SumatraPDF -print-settings.
@@ -131,11 +163,9 @@ def sumatra_settings(options):
     scaling = opts.get('fit-to-page', opts.get('scaling', 'true')).lower()
     settings = [{'false': 'noscale', 'noscale': 'noscale', 'none': 'noscale', 'shrink': 'shrink'}.get(scaling, 'fit')]
     media = (opts.get('media') or opts.get('pagesize') or opts.get('paper') or '').lower()
-    if media:
-        # also accepts IPP names like iso_a6_105x148mm
-        key = media.replace('iso_', '').replace('na_', '').split('_')[0]
-        if key in SUMATRA_PAPER:
-            settings.append(f"paper={SUMATRA_PAPER[key]}")
+    if named_paper(media):
+        settings.append(f"paper={named_paper(media)}")
+    # custom sizes (100x174mm) can't be passed to SumatraPDF - they're set as the printer's default paper instead
     color = (opts.get('print-color-mode') or opts.get('color') or '').lower()
     if color:
         settings.append('monochrome' if color in ('monochrome', 'mono', 'grayscale', 'greyscale', 'bw') else 'color')
@@ -214,6 +244,8 @@ class PrinterHandler():
         # which printers get offered to the OMS by enumerate - see PRINTER_CONNECTIONS in example.env
         self.connections = set(connections)
         self.settings_lock = threading.Lock()
+        self.paper_lock = threading.Lock()
+        self.paper_sizes = {}       # (printer, driver paper number) -> (x, y) in 0.1mm
 
     # --- helpers ---
 
@@ -308,6 +340,10 @@ class PrinterHandler():
         sumatra = self._sumatra()
         if not sumatra:
             raise RuntimeError('SumatraPDF not found - re-run install.ps1 or set SUMATRA_PATH in .env')
+        size = custom_size_mm(options.get('media') or options.get('pagesize') or options.get('paper'))
+        problem = size and self._apply_paper(printer, *size)
+        if problem:
+            logger.warning(problem)
         settings = sumatra_settings(options)
         cmd = [sumatra, '-print-to', printer, '-print-settings', settings, '-silent', filename]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=180, creationflags=CREATE_NO_WINDOW)
@@ -316,6 +352,109 @@ class PrinterHandler():
                                f"{(result.stderr or result.stdout).strip()}".strip())
         logger.info(f"Printed {filename} on {printer} via SumatraPDF ({settings})")
         return None
+
+    def _apply_paper(self, printer, width_mm, height_mm):
+        '''
+            Makes width x height mm the printer's default paper, which SumatraPDF picks up when it isn't given
+            paper=.  Set as both the machine-wide "Printing Defaults" and the service account's own preferences:
+            the size you pick in Printing Preferences on the desktop only applies to your user, so the service
+            never sees it.  Uses the driver's own paper if it has one that size, else a user-defined size.
+            Returns an error message if the driver didn't take the size.
+        '''
+        width, length = int(round(width_mm * 10)), int(round(height_mm * 10))     # DEVMODE uses 0.1mm
+        with self.paper_lock:
+            handle = self._open(printer, admin=True)
+            try:
+                info = win32print.GetPrinter(handle, 2)
+                devmode = info.get('pDevMode')
+                if devmode is None:
+                    raise RuntimeError(f"{printer}'s driver didn't give us its settings to change")
+                current = self._devmode(handle) or devmode
+                if self._paper_mm(printer, info['pPortName'], current) == (width / 10, length / 10) \
+                        and current.Orientation == DMORIENT_PORTRAIT:
+                    return None
+                paper = self._driver_paper(printer, info['pPortName'], width, length)
+                devmode.Fields |= DM_PAPERSIZE | DM_ORIENTATION
+                devmode.Orientation = DMORIENT_PORTRAIT
+                if paper:
+                    devmode.PaperSize = paper
+                    devmode.Fields &= ~(DM_PAPERWIDTH | DM_PAPERLENGTH)
+                else:
+                    devmode.PaperSize = DMPAPER_USER
+                    devmode.PaperWidth, devmode.PaperLength = width, length
+                    devmode.Fields |= DM_PAPERWIDTH | DM_PAPERLENGTH
+                # let the driver merge the change into its private settings (Zebra keeps label size there too)
+                win32print.DocumentProperties(0, handle, printer, devmode, devmode, DM_IN_BUFFER | DM_OUT_BUFFER)
+                info['pDevMode'] = devmode
+                info['pSecurityDescriptor'] = None
+                win32print.SetPrinter(handle, 2, info, 0)
+                try:
+                    win32print.SetPrinter(handle, 9, {'pDevMode': devmode}, 0)
+                except Exception as e:
+                    logger.debug(f"Couldn't set per-user paper for {printer}: {e}")
+                accepted = self._paper_mm(printer, info['pPortName'], devmode)
+            finally:
+                win32print.ClosePrinter(handle)
+        if accepted and (abs(accepted[0] - width / 10) > 1 or abs(accepted[1] - length / 10) > 1):
+            return (f"{printer}'s driver turned {width_mm:g}x{height_mm:g}mm into {accepted[0]:g}x{accepted[1]:g}mm - "
+                    f"add a {width_mm:g}x{height_mm:g}mm label size to the driver, then pick it again")
+        logger.info(f"Default paper on {printer} is now {width_mm:g}x{height_mm:g}mm")
+        return None
+
+    def _driver_papers(self, printer, port):
+        ''' [(paper number, (x, y) in 0.1mm)] that the driver offers '''
+        try:
+            papers = win32print.DeviceCapabilities(printer, port, DC_PAPERS) or []
+            sizes = win32print.DeviceCapabilities(printer, port, DC_PAPERSIZE) or []
+        except Exception:
+            return []
+        return [(paper, (size['x'], size['y']) if isinstance(size, dict) else tuple(size))
+                for paper, size in zip(papers, sizes)]
+
+    def _driver_paper(self, printer, port, width, length):
+        ''' the driver's paper number for this size (within 1mm), so drivers that ignore custom sizes still work '''
+        for paper, (x, y) in self._driver_papers(printer, port):
+            if paper != DMPAPER_USER and abs(x - width) <= 10 and abs(y - length) <= 10:
+                return paper
+        return None
+
+    def _devmode(self, handle):
+        ''' the settings the service account prints with: its own preferences if it has any, else Printing Defaults '''
+        try:
+            devmode = win32print.GetPrinter(handle, 9).get('pDevMode')
+            if devmode is not None:
+                return devmode
+        except Exception:
+            pass
+        return win32print.GetPrinter(handle, 2).get('pDevMode')
+
+    def _paper_mm(self, printer, port, devmode):
+        ''' (width, height) in mm of the paper this DEVMODE names, before orientation; None if unknown '''
+        if devmode.PaperSize == DMPAPER_USER or devmode.Fields & (DM_PAPERWIDTH | DM_PAPERLENGTH):
+            if devmode.PaperWidth and devmode.PaperLength:
+                return devmode.PaperWidth / 10, devmode.PaperLength / 10
+        key = (printer, devmode.PaperSize)
+        if key not in self.paper_sizes:
+            self.paper_sizes.update({(printer, paper): size for paper, size in self._driver_papers(printer, port)})
+        size = self.paper_sizes.setdefault(key, None)
+        return (size[0] / 10, size[1] / 10) if size else None
+
+    def paper_size(self, printer, port):
+        ''' the size PDFs actually come out at on this printer, e.g. '100x174mm' - shown on the fleet page '''
+        try:
+            handle = self._open(printer)
+            try:
+                devmode = self._devmode(handle)
+                size = devmode and self._paper_mm(printer, port, devmode)
+            finally:
+                win32print.ClosePrinter(handle)
+        except Exception:
+            return None
+        if not size:
+            return None
+        if devmode.Orientation == 2:        # landscape
+            size = (size[1], size[0])
+        return f"{size[0]:g}x{size[1]:g}mm"
 
     def enumerate_printers(self):
         ports = self._ports()
@@ -353,6 +492,7 @@ class PrinterHandler():
                 'default': name == default,
                 'queued_jobs': p.get('cJobs', 0),
                 'options': settings.get(name, {}),
+                'paper': self.paper_size(name, p['pPortName']),
             })
         return details
 
@@ -524,8 +664,19 @@ class PrinterHandler():
         win32print.SetDefaultPrinter(printer)
 
     def set_options(self, printer, options):
-        ''' PDF defaults for this printer (paper size, scaling, colour) - stored locally and applied by SumatraPDF '''
+        '''
+            PDF defaults for this printer (paper size, scaling, colour) - stored locally and applied by SumatraPDF.
+            A custom media size like '100x174mm' is also written into the printer's own default paper straight away.
+        '''
         self._require_printer(printer)
+        media = options.get('media')
+        if media and not named_paper(media):
+            size = custom_size_mm(media)
+            if not size:
+                raise ValueError(f"Unknown paper size {media!r} - use A4/A5/A6/Letter/Legal or a size like 100x174mm")
+            problem = self._apply_paper(printer, *size)
+            if problem:
+                raise RuntimeError(problem)
         with self.settings_lock:
             settings = self._load_settings()
             current = settings.get(printer, {})
