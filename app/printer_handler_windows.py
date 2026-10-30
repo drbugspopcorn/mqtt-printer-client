@@ -276,8 +276,27 @@ class PrinterHandler():
         return info
 
     def _printers(self):
-        flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
-        return {p['pPrinterName']: p for p in win32print.EnumPrinters(flags, None, 2)}
+        '''
+            Printers installed on this PC.  Connections to printers shared from elsewhere (\\\\server\\name,
+            \\\\http://host:631\\name) are left out: the spooler asks the remote end about those, and when it's
+            switched off each call blocks for Windows' 21s connect timeout, which stalls the whole client (MQTT
+            included) and gets it dropped by the broker.  The service can't print to them anyway.  Level 4 only lists
+            names, without contacting anything, so connections are skipped before anything asks them for details.
+        '''
+        printers = {}
+        for p in win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL, None, 4):
+            name = p['pPrinterName']
+            if name.startswith('\\\\') or p.get('pServerName'):
+                continue
+            try:
+                handle = self._open(name)
+                try:
+                    printers[name] = win32print.GetPrinter(handle, 2)
+                finally:
+                    win32print.ClosePrinter(handle)
+            except Exception as e:      # removed between the two calls
+                logger.debug(f"Skipping {name}: {e}")
+        return printers
 
     def _require_printer(self, name):
         printers = self._printers()

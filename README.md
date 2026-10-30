@@ -60,8 +60,9 @@ How printing works on Windows:
   doesn't reach it. The fleet page writes a label size into the printer's machine-wide *Printing Defaults* and
   the service's own preferences, and shows the size PDFs actually print at.
 - Whether a job is a PDF is decided from the file content, not the `raw` flag.
-- **Printers must be installed on the PC itself**, either USB or a network printer added by IP. The service can't
-  see printers mapped from another PC (`\\otherpc\printer`).
+- **Printers must be installed on the PC itself**, either USB or a network printer added by IP. The client ignores
+  printers connected from another machine (`\\otherpc\printer`, `\\http://host:631\printer`). The service can't
+  print to them anyway, and when that machine is off, every query to one blocks for about 21 seconds.
 - **Fleet page support** matches Linux: status, queue, cancel/clear, resume (it also unticks "Use printer
   offline"), test print, add/remove printers (via PowerShell, with drivers already installed on the PC), logs,
   restart, reboot and update.
